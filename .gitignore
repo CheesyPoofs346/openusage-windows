@@ -1,0 +1,38 @@
+.DS_Store
+.build/
+dist/
+node_modules/
+*.log
+.agents/worktrees/
+.agents/scheduled_tasks.lock
+
+# Local environment files
+.env
+.env.*
+
+# Signing and notarization material
+*.p12
+*.pem
+*.key
+*.cer
+*.certSigningRequest
+*.mobileprovision
+*.provisionprofile
+
+# Build and release artifacts
+*.dmg
+*.app
+*.xcarchive
+*.xcresult
+.build-test/
+
+# Local appcast / Sparkle feed output
+feed/
+appcast.xml
+
+# ---- Windows port (openusage-windows) ----
+.build/
+tray/bin/
+tray/obj/
+dist/
+*.user
