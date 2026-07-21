@@ -1,8 +1,10 @@
 using System.Diagnostics;
 using System.Drawing.Drawing2D;
 using System.Runtime.InteropServices;
+using System.Linq;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
 
@@ -67,6 +69,10 @@ sealed class AppHost : IDisposable
         };
         _popover.OnThemeChanged = t => { Theme.Save(t); _strip.SetData(_lastJson); };
         _strip.Show();
+        // Show the persisted last-known payload right away — meters/spend are on screen before the
+        // first (potentially slow) scan finishes.
+        _strip.SetData(_lastJson);
+        _popover.SetData(_lastJson);
         // Use the shared 5-minute cache (never force at launch — repeated forced reads are what trigger
         // the provider rate-limiting). The strip already shows last-known values from its own cache; the
         // spend fallback keeps a provider visible even while its live limits are momentarily unavailable.
@@ -77,7 +83,7 @@ sealed class AppHost : IDisposable
         _refresh.Start();
     }
 
-    private string _lastJson = "[]";
+    private string _lastJson = LoadLastPayload(); // last-known payload, so meters show instantly at launch
 
     // Strip-click: prime the popover with the last-known data so it opens INSTANTLY (never waits on the
     // all-time scan), then freshen in the background.
@@ -89,19 +95,42 @@ sealed class AppHost : IDisposable
         RefreshAll(force: false);
     }
 
-    // One shared fetch feeds both the strip and the popover — no redundant CLI scans.
+    // One shared fetch feeds both the strip and the popover — no redundant CLI scans. The result is
+    // merged with the last payload so meters survive a rate-limited refresh, then persisted so they're
+    // on screen immediately at next launch too.
     private void RefreshAll(bool force)
     {
         Task.Run(() =>
         {
-            string json = Cli.Fetch(force);
+            string fetched = Cli.Fetch(force);
+            string merged = UsageMerge.Merge(_lastJson, fetched);
             _strip.BeginInvoke(() =>
             {
-                _lastJson = json;
-                _strip.SetData(json);
-                _popover.SetData(json);
+                _lastJson = merged;
+                SaveLastPayload(merged);
+                _strip.SetData(merged);
+                _popover.SetData(merged);
             });
         });
+    }
+
+    private static readonly string LastPayloadFile = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "OpenUsage", "last_ui.json");
+
+    private static void SaveLastPayload(string json)
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(LastPayloadFile)!);
+            File.WriteAllText(LastPayloadFile, json);
+        }
+        catch { }
+    }
+
+    private static string LoadLastPayload()
+    {
+        try { return File.Exists(LastPayloadFile) ? File.ReadAllText(LastPayloadFile) : "[]"; }
+        catch { return "[]"; }
     }
 
     private void ToggleTheme()
@@ -444,6 +473,47 @@ sealed class PopoverForm : Form
 
     [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hWnd);
     private void NativeActivate() => SetForegroundWindow(Handle);
+}
+
+/// Keeps usage meters on screen at ALL times. A provider's live-limits API can be briefly rate-limited,
+/// in which case the refresh comes back with spend rows but no `progress` (meter) lines at all — the
+/// Session/Weekly bars would just vanish. This carries the last-known meters forward into such a payload
+/// (stale-while-revalidate, the same thing the macOS app does), so the bars stay visible until real
+/// values return.
+static class UsageMerge
+{
+    public static string Merge(string previousJson, string currentJson)
+    {
+        try
+        {
+            var current = JsonNode.Parse(currentJson);
+            var previous = JsonNode.Parse(previousJson);
+            var currentProviders = current?["providers"]?.AsArray();
+            var previousProviders = previous?["providers"]?.AsArray();
+            if (currentProviders is null || previousProviders is null) return currentJson;
+
+            foreach (var providerNode in currentProviders)
+            {
+                var id = providerNode?["providerId"]?.GetValue<string>();
+                var lines = providerNode?["lines"]?.AsArray();
+                if (id is null || lines is null) continue;
+                if (lines.Any(l => l?["type"]?.GetValue<string>() == "progress")) continue; // already has meters
+
+                var previousLines = previousProviders
+                    .FirstOrDefault(p => p?["providerId"]?.GetValue<string>() == id)?["lines"]?.AsArray();
+                if (previousLines is null) continue;
+
+                var carried = previousLines
+                    .Where(l => l?["type"]?.GetValue<string>() == "progress")
+                    .Select(l => l!.ToJsonString())
+                    .ToList();
+                // Meters lead the card, so re-insert them at the front in their original order.
+                for (int i = carried.Count - 1; i >= 0; i--) lines.Insert(0, JsonNode.Parse(carried[i]));
+            }
+            return current!.ToJsonString();
+        }
+        catch { return currentJson; }
+    }
 }
 
 /// Runs the ported `openusage` CLI and returns its `--ui` JSON payload.

@@ -21,6 +21,17 @@ The metrics live right on your taskbar and rotate between **usage** and **API‑
 
 ---
 
+## Download
+
+**[⬇ Download the latest release](../../releases/latest)** → unzip anywhere → run **`OpenUsageTray.exe`**.
+
+No installer, no .NET, no Swift — everything is bundled. A slim strip appears at the right end of your
+taskbar showing your usage; **click it** for the full dashboard, **right-click** for Refresh / Dark mode /
+Quit, and **drag** it to reposition.
+
+<sub>Windows 10/11 x64. Needs the WebView2 runtime, which ships with Windows 11 and current Windows 10.
+Your provider credentials are read locally — OpenUsage never sends them anywhere.</sub>
+
 ## What you get
 
 - **Taskbar strip (the macOS menu‑bar pins).** A slim, transparent, always‑on‑top overlay drawn onto the
@@ -73,7 +84,9 @@ cp ../.build/release/openusage-cli.exe bin/Release/net9.0-windows/openusage.exe
 Run `bin/Release/net9.0-windows/OpenUsageTray.exe`. It puts a strip on your taskbar; click it for the
 popover. Right‑click → Quit.
 
-A prebuilt, self‑contained build is produced by [`tray/build-dist.sh`](tray/build-dist.sh) into `dist/`.
+To produce the self‑contained release bundle yourself, run [`tray/build-dist.sh`](tray/build-dist.sh) —
+it publishes a single‑file `OpenUsageTray.exe` into `dist/` alongside the CLI, the Swift runtime, and
+`web/`.
 
 ## Known limitations vs. macOS
 

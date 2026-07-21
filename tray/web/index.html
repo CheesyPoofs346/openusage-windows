@@ -320,6 +320,9 @@ function providerSection(p){
   const lines=p.lines||[];
   let prevText=false;
   for(const line of lines){
+    // Skip empty placeholder rows (e.g. the "Status —" line a rate-limited refresh emits) — the meters
+    // themselves are carried over by the host, so an em-dash row is pure noise.
+    if(line.type==="text" && (!line.value || /^[—-]\s*$/.test(String(line.value)))) continue;
     if(line.type==="progress"){ card.appendChild(meterRow(line)); prevText=false; }
     else if(line.type==="barChart"){ card.appendChild(chartRow(line)); prevText=false; }
     else { card.appendChild(textRow(line, prevText)); prevText=true; }

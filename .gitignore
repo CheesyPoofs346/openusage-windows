@@ -36,3 +36,6 @@ tray/bin/
 tray/obj/
 dist/
 *.user
+
+# release artifacts
+*.zip
