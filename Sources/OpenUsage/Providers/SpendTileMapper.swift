@@ -26,8 +26,8 @@ enum SpendTileMapper {
         modelUsage: ModelUsageSeries? = nil,
         modelSourceNote: String? = nil
     ) {
+        let calendar = Calendar.current
         let today = dayKey(from: now)
-        let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: now).map(dayKey(from:))
 
         if let entry = usage.daily.first(where: { dayKey(fromUsageDate: $0.date) == today }), hasUsage(entry) {
             lines.append(dayUsageLine(label: "Today", entry: entry, estimated: estimated,
@@ -40,34 +40,46 @@ enum SpendTileMapper {
                                         sourceNote: modelSourceNote
                                       )))
         }
-        if let entry = usage.daily.first(where: { dayKey(fromUsageDate: $0.date) == yesterday }), hasUsage(entry) {
-            lines.append(dayUsageLine(label: "Yesterday", entry: entry, estimated: estimated,
-                                      unknownModels: sortedModels(yesterday.flatMap { unknownModelsByDay[$0] }),
-                                      modelBreakdown: modelBreakdown(
-                                        modelUsage,
-                                        days: Set([yesterday].compactMap { $0 }),
-                                        totalTokens: entry.totalTokens,
-                                        totalCostUSD: entry.costUSD,
-                                        sourceNote: modelSourceNote
-                                      )))
-        }
 
-        let totalTokens = usage.daily.reduce(0) { $0 + $1.totalTokens }
-        let costSamples = usage.daily.compactMap(\.costUSD)
-        let totalCost = costSamples.isEmpty ? nil : costSamples.reduce(0, +)
-        if totalTokens > 0 || (totalCost ?? 0) > 0 {
-            let allUnknown = unknownModelsByDay.values.reduce(into: Set<String>()) { $0.formUnion($1) }
-            lines.append(.values(label: "Last 30 Days",
-                                 values: spendValues(tokens: totalTokens, costUSD: totalCost, estimated: estimated),
-                                 unknownModels: sortedModels(allUnknown),
-                                 modelBreakdown: modelBreakdown(
-                                    modelUsage,
-                                    days: Set(usage.daily.compactMap { dayKey(fromUsageDate: $0.date) }),
-                                    totalTokens: totalTokens,
-                                    totalCostUSD: totalCost,
-                                    sourceNote: modelSourceNote
-                                 )))
+        // Rolling windows + an all-time total. `daysBack == nil` means "everything in the series".
+        // The 30-day window matches the previous "Last 30 Days" tile; All Time sums the full history
+        // (the providers now scan all logs on disk for the spend series — the trend chart stays 30 days).
+        appendWindow(label: "Last 7 Days", daysBack: 6, usage: usage, to: &lines, now: now, calendar: calendar,
+                     estimated: estimated, unknownModelsByDay: unknownModelsByDay, modelUsage: modelUsage, modelSourceNote: modelSourceNote)
+        appendWindow(label: "Last 30 Days", daysBack: 30, usage: usage, to: &lines, now: now, calendar: calendar,
+                     estimated: estimated, unknownModelsByDay: unknownModelsByDay, modelUsage: modelUsage, modelSourceNote: modelSourceNote)
+        appendWindow(label: "All Time", daysBack: nil, usage: usage, to: &lines, now: now, calendar: calendar,
+                     estimated: estimated, unknownModelsByDay: unknownModelsByDay, modelUsage: modelUsage, modelSourceNote: modelSourceNote)
+    }
+
+    /// Sum a trailing window of the series (or the whole series when `daysBack == nil`) into one spend
+    /// tile. Day keys are `yyyy-MM-dd`, so a lexicographic `>=` compare is a chronological one.
+    private static func appendWindow(
+        label: String, daysBack: Int?, usage: DailyUsageSeries, to lines: inout [MetricLine],
+        now: Date, calendar: Calendar, estimated: Bool, unknownModelsByDay: [String: Set<String>],
+        modelUsage: ModelUsageSeries?, modelSourceNote: String?
+    ) {
+        let cutoffKey: String? = daysBack.flatMap { back in
+            calendar.date(byAdding: .day, value: -back, to: calendar.startOfDay(for: now)).map(dayKey(from:))
         }
+        let entries = usage.daily.filter { entry in
+            guard let key = dayKey(fromUsageDate: entry.date) else { return false }
+            return cutoffKey.map { key >= $0 } ?? true
+        }
+        let totalTokens = entries.reduce(0) { $0 + $1.totalTokens }
+        let costSamples = entries.compactMap(\.costUSD)
+        let totalCost = costSamples.isEmpty ? nil : costSamples.reduce(0, +)
+        guard totalTokens > 0 || (totalCost ?? 0) > 0 else { return }
+
+        let dayKeys = Set(entries.compactMap { dayKey(fromUsageDate: $0.date) })
+        let unknown = dayKeys.reduce(into: Set<String>()) { $0.formUnion(unknownModelsByDay[$1] ?? []) }
+        lines.append(.values(label: label,
+                             values: spendValues(tokens: totalTokens, costUSD: totalCost, estimated: estimated),
+                             unknownModels: sortedModels(unknown),
+                             modelBreakdown: modelBreakdown(
+                                modelUsage, days: dayKeys,
+                                totalTokens: totalTokens, totalCostUSD: totalCost,
+                                sourceNote: modelSourceNote)))
     }
 
     /// A period with any real usage: tokens used, dollars priced, or both. A zero-token, zero-cost day

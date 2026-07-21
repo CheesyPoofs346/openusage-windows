@@ -96,7 +96,7 @@ final class GrokProvider: ProviderRuntime {
         // Local spend tiles, read natively from the Grok CLI log and priced via the shared pricing
         // store. `scan` is awaited so its whole-file read + parse runs off the main actor.
         var usageHistory: ProviderUsageHistory?
-        if let scan = await logUsageScanner.scan(daysBack: 30, now: now(), pricing: await pricing()) {
+        if let scan = await logUsageScanner.scan(daysBack: UsageHistoryWindow.allTimeScanDays, now: now(), pricing: await pricing()) {
             usageHistory = ProviderUsageHistory(
                 series: scan.series,
                 modelUsage: scan.modelUsage,

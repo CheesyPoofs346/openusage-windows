@@ -25,6 +25,11 @@ struct DailyUsageSeries: Hashable, Sendable, Codable {
 enum UsageHistoryWindow {
     static let previousDays = 30
 
+    /// Scan window for the spend tiles' "All Time" total. Large enough to cover every real log on disk
+    /// (these tools are new — logs only go back months), while staying bounded so a scan can never run
+    /// away. The usage-trend chart still uses `previousDays`, so only the spend totals see all history.
+    static let allTimeScanDays = 3650
+
     static func dayKeys(through now: Date, calendar: Calendar = .current) -> Set<String> {
         let today = calendar.startOfDay(for: now)
         return Set((0...previousDays).compactMap { offset in

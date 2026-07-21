@@ -140,7 +140,7 @@ final class CodexProvider: ProviderRuntime {
         // the shared pricing store, merged with Codex usage that happened inside pi (attributed back
         // here). Both scans run on their scanner actors, off the main actor.
         let pricing = await pricing()
-        let nativeScan = await logUsageScanner.scan(now: now(), pricing: pricing)
+        let nativeScan = await logUsageScanner.scan(daysBack: UsageHistoryWindow.allTimeScanDays, now: now(), pricing: pricing)
         let piScan = await PiUsageScanner.shared.scan(cardID: provider.id, now: now(), pricing: pricing)
         var usageHistory: ProviderUsageHistory?
         // Cancellation can land between the native and pi scans. Treat the pair as one unit so a

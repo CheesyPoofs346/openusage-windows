@@ -60,7 +60,7 @@ sealed class AppHost : IDisposable
         _strip = new StripForm
         {
             IsDark = () => Theme.Current() == "dark",
-            OnClick = () => _popover.Toggle(),
+            OnClick = OpenPopover,
             OnRefresh = () => RefreshAll(force: true),
             OnQuit = Quit,
             OnToggleTheme = ToggleTheme
@@ -79,14 +79,29 @@ sealed class AppHost : IDisposable
 
     private string _lastJson = "[]";
 
+    // Strip-click: prime the popover with the last-known data so it opens INSTANTLY (never waits on the
+    // all-time scan), then freshen in the background.
+    private void OpenPopover()
+    {
+        if (_popover.IsShown) { _popover.Toggle(); return; } // second click closes it
+        _popover.SetData(_lastJson);
+        _popover.Toggle();
+        RefreshAll(force: false);
+    }
+
+    // One shared fetch feeds both the strip and the popover — no redundant CLI scans.
     private void RefreshAll(bool force)
     {
         Task.Run(() =>
         {
             string json = Cli.Fetch(force);
-            _strip.BeginInvoke(() => { _lastJson = json; _strip.SetData(json); });
+            _strip.BeginInvoke(() =>
+            {
+                _lastJson = json;
+                _strip.SetData(json);
+                _popover.SetData(json);
+            });
         });
-        _popover.Refresh(force); // popover fetches its own copy for the rich UI
     }
 
     private void ToggleTheme()
@@ -157,9 +172,16 @@ sealed class PopoverForm : Form
         // NOTE: never set Opacity != 1 — it turns the form into a WS_EX_LAYERED window, and WebView2
         // (DirectComposition) renders BLANK in layered windows. That was the "blank popover" bug.
 
-        _web.Dock = DockStyle.Fill;
+        // NOT docked: the WebView keeps a FIXED size and stays pinned to the window's bottom-right while
+        // the window itself grows during the open animation. That way the whole panel (background +
+        // rounded corners + content) scales out of the corner instead of the background popping in at
+        // full size, and the page never reflows mid-animation.
+        _web.Dock = DockStyle.None;
         Controls.Add(_web);
-        Deactivate += (_, _) => Hide();
+        Deactivate += (_, _) => { if (!_growing) Hide(); };
+
+        _grow = new System.Windows.Forms.Timer { Interval = 16 };
+        _grow.Tick += (_, _) => GrowTick();
 
         _ = InitWebAsync();
     }
@@ -198,7 +220,7 @@ sealed class PopoverForm : Form
             var theme = ThemeProvider?.Invoke() ?? "light";
             try { await core.ExecuteScriptAsync($"window.setTheme && window.setTheme('{theme}')"); } catch { }
             if (_selfTest) { ShowPopover(); return; }
-            if (_pendingShow) { _pendingShow = false; Refresh(force: false); }
+            if (_pendingShow) { _pendingShow = false; Inject(_data); }
         };
 
         core.Navigate("https://openusage.local/index.html");
@@ -215,9 +237,11 @@ sealed class PopoverForm : Form
             {
                 int height = (int)Math.Ceiling(h.GetDouble());
                 _lastHeight = Math.Clamp(height, 120, MaxScreenHeight());
-                Height = _lastHeight;
-                Reposition();
-                ApplyRoundedRegion();
+                // Re-target the final bounds. While the open animation is still running it will land on
+                // the new size by itself; otherwise snap straight to it.
+                _finalBounds = ComputeFinalBounds();
+                _web.Size = new Size(_finalBounds.Width, _finalBounds.Height);
+                if (!_growing) ApplyGrow(1f);
             }
             if (doc.RootElement.TryGetProperty("theme", out var th))
             {
@@ -229,6 +253,8 @@ sealed class PopoverForm : Form
         catch { /* ignore malformed messages */ }
     }
 
+    public bool IsShown => Visible;
+
     public void Toggle()
     {
         if (Visible) { Hide(); return; }
@@ -237,15 +263,73 @@ sealed class PopoverForm : Form
 
     private void ShowPopover()
     {
-        Reposition();
-        ApplyRoundedRegion();
+        _finalBounds = ComputeFinalBounds();
+        _web.Size = new Size(_finalBounds.Width, _finalBounds.Height);
+        StartGrow();                 // window starts small at the corner and grows to _finalBounds
         Show();
         TopMost = true;
         Activate();
         NativeActivate();
         PlayOpen();
-        if (_ready) Refresh(force: false);
+        // Render the last-known data INSTANTLY (no waiting on a scan) — stale-while-revalidate. The host
+        // triggers a background refresh separately, which calls SetData again when fresh data arrives.
+        if (_selfTest) { Refresh(force: false); return; } // selftest fetches its own data
+        if (_ready) Inject(_data);
         else _pendingShow = true;
+    }
+
+    // ---- open animation: the WHOLE window (background, rounded corners and all) scales out of the
+    // bottom-right corner, so nothing pops in at full size. Runs in lockstep with the page's CSS spring.
+    private readonly System.Windows.Forms.Timer _grow;
+    private bool _growing;
+    private float _growT;
+    private Rectangle _finalBounds;
+    private const float GrowStart = 0.55f;
+    private const float GrowMs = 440f;
+
+    private Rectangle ComputeFinalBounds()
+    {
+        var wa = Screen.FromPoint(Cursor.Position).WorkingArea;
+        int h = Math.Clamp(_lastHeight, 120, MaxScreenHeight());
+        int x = Math.Max(wa.Left + Margin_, wa.Right - Width_ - Margin_);
+        int y = Math.Max(wa.Top + Margin_, wa.Bottom - h - Margin_);
+        return new Rectangle(x, y, Width_, h);
+    }
+
+    private void StartGrow()
+    {
+        _growing = true;
+        _growT = 0f;
+        ApplyGrow(GrowStart);
+        _grow.Start();
+    }
+
+    private void GrowTick()
+    {
+        _growT += 16f / GrowMs;
+        if (_growT >= 1f) { _growT = 1f; _growing = false; _grow.Stop(); }
+        float e = 1f - (float)Math.Pow(1 - _growT, 5); // easeOutQuint ≈ the page's cubic-bezier(.16,1,.3,1)
+        ApplyGrow(GrowStart + (1f - GrowStart) * e);
+    }
+
+    private void ApplyGrow(float scale)
+    {
+        int w = Math.Max(8, (int)(_finalBounds.Width * scale));
+        int h = Math.Max(8, (int)(_finalBounds.Height * scale));
+        // Pin the bottom-right corner (nearest the strip) so it grows outward from there.
+        base.SetBounds(_finalBounds.Right - w, _finalBounds.Bottom - h, w, h, BoundsSpecified.All);
+        // Keep the fixed-size WebView glued to that same corner so the page never reflows.
+        _web.Location = new Point(ClientSize.Width - _finalBounds.Width, ClientSize.Height - _finalBounds.Height);
+        ApplyRoundedRegion();
+    }
+
+    private string _data = "[]";
+
+    /// Feed the popover the latest payload (from the host's shared fetch). Re-renders live if visible.
+    public void SetData(string json)
+    {
+        _data = string.IsNullOrWhiteSpace(json) ? "[]" : json;
+        if (_ready && Visible) Inject(_data);
     }
 
     /// Replay the spring-open animation inside the page each time the popover is shown.
