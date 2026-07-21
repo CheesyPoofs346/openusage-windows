@@ -12,7 +12,7 @@ like the Mac original.
   &nbsp;
   <img src="tray/screenshots/popover-dark.png" alt="The same popover in dark mode" width="330">
 </p>
-<p align="center"><sub>Light and dark. Screenshots use sample data.</sub></p>
+<p align="center"><sub>Light and dark</sub></p>
 
 The metrics live right on your taskbar and rotate between **usage** and **API‑price spend**:
 
