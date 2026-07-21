@@ -22,7 +22,8 @@
   --blue:#007aff;                 /* systemBlue  (MeterSeverity.normal) */
   --yellow:#ffc400;               /* systemYellow (.warning) */
   --red:#ff3b30;                  /* systemRed (.critical) */
-  --tick:rgba(0,0,0,.55);         /* pace tick = Color.primary.opacity(.55) */
+  --tick:rgba(0,0,0,.70);         /* even-pace marker */
+  --tick-halo:rgba(255,255,255,.9); /* contrast ring so it reads on the colored fill too */
   --seg-on-bg:#ffffff;
   --seg-on-shadow:0 1px 2px rgba(0,0,0,.16);
 
@@ -41,7 +42,8 @@
 body.dark{
   --tray:#1c1c1e; --card:#2c2c2e; --track:rgba(120,120,128,.34); --segbg:#2a2a2c; --hair:rgba(255,255,255,.10);
   --text:#f5f5f7; --text2:rgba(235,235,245,.60); --text3:rgba(235,235,245,.30);
-  --blue:#0a84ff; --yellow:#ffd60a; --red:#ff453a; --tick:rgba(255,255,255,.62);
+  --blue:#0a84ff; --yellow:#ffd60a; --red:#ff453a;
+  --tick:rgba(255,255,255,.85); --tick-halo:rgba(0,0,0,.55);
   --seg-on-bg:#636366; --seg-on-shadow:0 1px 2px rgba(0,0,0,.4);
 }
 *{box-sizing:border-box;margin:0;padding:0}
@@ -106,9 +108,11 @@ html,body{background:var(--tray);color:var(--text);font-family:var(--font);
 .meter .trk{position:absolute;inset:0;background:var(--track);border-radius:99px}
 .meter .fil{position:absolute;top:0;bottom:0;left:0;border-radius:99px;min-width:var(--bar-h);
   transition:width .6s cubic-bezier(.22,1,.36,1), background .3s ease}
-.meter .tk{transition:left .6s cubic-bezier(.22,1,.36,1)}
-.meter .tk{position:absolute;top:-2px;width:2px;height:calc(var(--bar-h) + 4px);
-  background:var(--tick);border-radius:1px}
+/* Even-pace marker: "you should be about here right now". Taller than the bar and ringed so it stays
+   legible whether it lands on the colored fill or the empty track. */
+.meter .tk{position:absolute;top:-3px;width:2px;height:calc(var(--bar-h) + 6px);
+  background:var(--tick);border-radius:1.5px;box-shadow:0 0 0 1px var(--tick-halo);
+  transition:left .6s cubic-bezier(.22,1,.36,1)}
 .mrow .read{display:flex;align-items:baseline;gap:8px;font-size:12px;margin-top:var(--row-gap)}
 .mrow .read .head{color:var(--text);font-weight:400}
 .mrow .read .ctx{margin-left:auto;color:var(--text2);white-space:nowrap}
@@ -269,9 +273,20 @@ function meterRow(line){
   // transition still animates on later value changes.
   fil.style.width=target; fil.style.background=color;
   meter.appendChild(fil);
-  if(elapsed!=null){ // even-pace tick, at remaining-if-burned-evenly
-    const tk=el("div","tk"); const at=Math.max(0,Math.min(1,1-elapsed));
-    tk.style.left=`calc(${(at*100).toFixed(2)}% - 1px)`; meter.appendChild(tk);
+  // Even-pace marker: where the bar WOULD sit right now if the window were burned evenly, i.e. "you
+  // should be about here". Sits at remaining-if-even = 1 - elapsed, in the same track space as the fill,
+  // so the gap between the fill edge and the marker is how far ahead/behind pace you are.
+  if(elapsed!=null){
+    const at=Math.max(0,Math.min(1,1-elapsed));
+    const shouldPct=Math.round(at*100);
+    const tk=el("div","tk");
+    // Clamp inside the track so it never pokes past the rounded ends (matches the macOS meter).
+    tk.style.left=`clamp(0px, calc(${(at*100).toFixed(2)}% - 1px), calc(100% - 2px))`;
+    tk.classList.add(remainPct >= shouldPct ? "ok" : "over");
+    tk.title = remainPct >= shouldPct
+      ? `On pace — at this point you'd expect ~${shouldPct}% left, and you have ${remainPct}%.`
+      : `Ahead of pace — at this point you'd expect ~${shouldPct}% left, but you have ${remainPct}%.`;
+    meter.appendChild(tk);
   }
   row.appendChild(meter);
 
