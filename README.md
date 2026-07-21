@@ -23,7 +23,9 @@ The metrics live right on your taskbar and rotate between **usage** and **API‑
 
 ## Download
 
-**[⬇ Download the latest release](../../releases/latest)** → unzip anywhere → run **`OpenUsageTray.exe`**.
+**[⬇ Download OpenUsage for Windows](https://github.com/CheesyPoofs346/openusage-windows/releases/latest/download/OpenUsage-Windows-x64.zip)** (70 MB) → unzip anywhere → run **`OpenUsageTray.exe`**.
+
+<sub>That link always serves the newest build. Or browse [all releases](../../releases).</sub>
 
 No installer, no .NET, no Swift — everything is bundled. A slim strip appears at the right end of your
 taskbar showing your usage; **click it** for the full dashboard, **right-click** for Refresh / Dark mode /
