@@ -72,6 +72,8 @@ html,body{background:var(--tray);color:var(--text);font-family:var(--font);
 .seg button{position:relative;z-index:1;flex:1;border:0;background:transparent;font-family:inherit;font-size:12px;
   font-weight:600;color:var(--text2);padding:5px 0;border-radius:7px;cursor:default;transition:color .22s ease}
 .seg button.on{color:var(--text)}
+/* No focus ring — this is an app popover, not a form; the thumb already shows the selection. */
+.seg button:focus, .seg button:focus-visible{outline:none}
 
 .donut-wrap{display:flex;align-items:center;gap:16px}
 .donut{position:relative;width:132px;height:132px;flex:0 0 auto}
@@ -389,6 +391,11 @@ function spendCard(providers){
   attachSegDrag();
   updateSpendBody(false);
   requestAnimationFrame(()=>positionThumb(PERIODS.indexOf(spendPeriod), false));
+  // The first rAF can measure the segment before layout settles (fonts/scrollbar), which left the
+  // thumb sized and positioned for the wrong width. Re-place it whenever the segment's width changes.
+  if(window.ResizeObserver){
+    new ResizeObserver(()=>positionThumb(PERIODS.indexOf(spendPeriod), false)).observe(seg);
+  }
   return card;
 }
 
@@ -533,25 +540,31 @@ window.renderData = function(payload){
 };
 
 /* ---------- standalone preview sample (ignored when the tray injects real data) ---------- */
+// Demo payload used when the page is opened directly (and for the README screenshots). Numbers are
+// illustrative, and the meters are set to sit roughly ON pace so the even-pace marker reads naturally.
 const SAMPLE=[{"displayName":"Claude","plan":"Pro","providerId":"claude","fetchedAt":new Date().toISOString(),"lines":[
- {"label":"Session","type":"progress","used":0,"limit":100,"format":{"kind":"percent"},"resetsAt":new Date(Date.now()+5*3600e3).toISOString(),"periodDurationMs":18000000},
- {"label":"Weekly","type":"progress","used":64,"limit":100,"format":{"kind":"percent"},"resetsAt":new Date(Date.now()+30*3600e3).toISOString(),"periodDurationMs":604800000},
- {"label":"Fable","type":"progress","used":73,"limit":100,"format":{"kind":"percent"},"resetsAt":new Date(Date.now()+30*3600e3).toISOString(),"periodDurationMs":604800000},
- {"label":"Today","type":"text","value":"$49.85 · 35.8M tokens"},
- {"label":"Yesterday","type":"text","value":"$1.31 · 738.5K tokens"},
- {"label":"Last 30 Days","type":"text","value":"$6,042.64 · 2.6B tokens"}
-]},
-{"displayName":"Cursor","plan":"Pro","providerId":"cursor","fetchedAt":new Date().toISOString(),"lines":[
- {"label":"Last 30 Days","type":"text","value":"$7,121.12 · 1.2B tokens"}
+ {"label":"Session","type":"progress","used":32,"limit":100,"format":{"kind":"percent"},"resetsAt":new Date(Date.now()+2*3600e3).toISOString(),"periodDurationMs":18000000},
+ {"label":"Weekly","type":"progress","used":46,"limit":100,"format":{"kind":"percent"},"resetsAt":new Date(Date.now()+2.1*24*3600e3).toISOString(),"periodDurationMs":604800000},
+ {"label":"Today","type":"text","value":"$12.40 · 9.8M tokens"},
+ {"label":"Last 7 Days","type":"text","value":"$86.20 · 71.4M tokens"},
+ {"label":"Last 30 Days","type":"text","value":"$318.75 · 264.9M tokens"},
+ {"label":"All Time","type":"text","value":"$742.10 · 615.3M tokens"},
+ {"label":"Usage Trend","type":"barChart","note":"From your Claude usage history (estimated)",
+  "points":[3,5,2,8,11,6,9,14,7,4,12,16,9,6,10,13,8,5,11,15,7,9,12,6,10,14,8,11,9,13]
+    .map((v,i)=>({label:"d"+i,value:v*1e6,valueLabel:(v)+"M tokens"}))}
 ]},
 {"displayName":"Codex","plan":"Plus","providerId":"codex","fetchedAt":new Date().toISOString(),"lines":[
- {"label":"Last 30 Days","type":"text","value":"$134.46 · 90M tokens"}
+ {"label":"Weekly","type":"progress","used":29,"limit":100,"format":{"kind":"percent"},"resetsAt":new Date(Date.now()+3.5*24*3600e3).toISOString(),"periodDurationMs":604800000},
+ {"label":"Last 7 Days","type":"text","value":"$24.80 · 18.6M tokens"},
+ {"label":"Last 30 Days","type":"text","value":"$96.40 · 74.2M tokens"},
+ {"label":"All Time","type":"text","value":"$210.55 · 168.9M tokens"}
 ]},
-{"displayName":"Grok","plan":"SuperGrok","providerId":"grok","fetchedAt":new Date().toISOString(),"lines":[
- {"label":"Last 30 Days","type":"text","value":"$71.02 · 40M tokens"}
+{"displayName":"Cursor","plan":"Pro","providerId":"cursor","fetchedAt":new Date().toISOString(),"lines":[
+ {"label":"Last 7 Days","type":"text","value":"$18.30 · 12.1M tokens"},
+ {"label":"Last 30 Days","type":"text","value":"$62.15 · 48.7M tokens"},
+ {"label":"All Time","type":"text","value":"$128.90 · 101.4M tokens"}
 ]}];
-const SAMPLE_ERRORS=[{"providerId":"codex","displayName":"Codex","message":"Token revoked. Run `codex` to log in again."}];
-if(!window.__NO_SAMPLE__) renderApp(SAMPLE, SAMPLE_ERRORS);
+if(!window.__NO_SAMPLE__) renderApp(SAMPLE, []);
 </script>
 </body>
 </html>

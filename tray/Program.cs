@@ -31,10 +31,25 @@ static class Program
             return;
         }
 
+        // Render the built-in demo payload to PNGs for the README (light + dark), so the docs never
+        // show anyone's real usage numbers.
+        if (args.Contains("--shots"))
+        {
+            var shots = new PopoverForm(sampleShots: true);
+            Application.Run();
+            GC.KeepAlive(shots);
+            return;
+        }
+
         if (args.Contains("--striptest"))
         {
             var strip = new StripForm { IsDark = () => true };
-            strip.SetData(Cli.Fetch(force: false));
+            // `--striptest <file.json>` renders a supplied payload instead of a live read (used for docs).
+            int at = Array.IndexOf(args, "--striptest");
+            string stripJson = (at >= 0 && at + 1 < args.Length && File.Exists(args[at + 1]))
+                ? File.ReadAllText(args[at + 1])
+                : Cli.Fetch(force: false);
+            strip.SetData(stripJson);
             strip.RenderToFile(Path.Combine(Path.GetTempPath(), "openusage_striptest_usage.png"), showPrice: false);
             strip.RenderToFile(Path.Combine(Path.GetTempPath(), "openusage_striptest_price.png"), showPrice: true);
             return;
@@ -188,9 +203,12 @@ sealed class PopoverForm : Form
     private const int MaxHeight = 2000;
     private const int Margin_ = 12;
 
-    public PopoverForm(bool selfTest = false)
+    private readonly bool _sampleShots;
+
+    public PopoverForm(bool selfTest = false, bool sampleShots = false)
     {
         _selfTest = selfTest;
+        _sampleShots = sampleShots;
         FormBorderStyle = FormBorderStyle.None;
         ShowInTaskbar = false;
         StartPosition = FormStartPosition.Manual;
@@ -245,7 +263,9 @@ sealed class PopoverForm : Form
         ApplyBackdrop(ThemeProvider?.Invoke() ?? "light");
 
         // Skip the file's built-in sample payload; the host injects the real data.
-        await core.AddScriptToExecuteOnDocumentCreatedAsync("window.__NO_SAMPLE__ = true;");
+        // In shots mode let the page render its own demo payload instead of suppressing it.
+        if (!_sampleShots)
+            await core.AddScriptToExecuteOnDocumentCreatedAsync("window.__NO_SAMPLE__ = true;");
 
         // Serve the web/ folder over a virtual host so the SVG icon masks resolve cleanly.
         var webDir = Path.Combine(AppContext.BaseDirectory, "web");
@@ -259,6 +279,7 @@ sealed class PopoverForm : Form
             // Apply the host's persisted theme so the strip menu and the popover always agree.
             var theme = ThemeProvider?.Invoke() ?? "light";
             try { await core.ExecuteScriptAsync($"window.setTheme && window.setTheme('{theme}')"); } catch { }
+            if (_sampleShots) { await CaptureSampleShots(); return; }
             if (_selfTest) { ShowPopover(); return; }
             if (_pendingShow) { _pendingShow = false; Inject(_data); }
         };
@@ -377,6 +398,35 @@ sealed class PopoverForm : Form
     {
         _data = string.IsNullOrWhiteSpace(json) ? "[]" : json;
         if (_ready && Visible) Inject(_data);
+    }
+
+    /// Render the page's built-in demo payload to light + dark PNGs for the README, sized to the full
+    /// content so nothing is cut off. Never touches real provider data.
+    private async Task CaptureSampleShots()
+    {
+        var core = _web.CoreWebView2;
+        var outDir = Path.Combine(AppContext.BaseDirectory, "shots");
+        Directory.CreateDirectory(outDir);
+
+        async Task Shot(string theme, string file)
+        {
+            await core.ExecuteScriptAsync($"window.setTheme && window.setTheme('{theme}')");
+            await Task.Delay(500);                                  // let the theme + layout settle
+            var h = await core.ExecuteScriptAsync("document.body.scrollHeight");
+            int height = int.TryParse(h?.Trim('"'), out var v) ? v : 900;
+            _finalBounds = new Rectangle(0, 0, Width_, height);
+            _web.Size = new Size(Width_, height);
+            base.SetBounds(0, 0, Width_, height, BoundsSpecified.All);
+            _web.Location = new Point(0, 0);
+            await Task.Delay(600);                                  // let entrance animations finish
+            using var fs = File.Create(Path.Combine(outDir, file));
+            await core.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, fs);
+        }
+
+        Show();
+        await Shot("light", "popover.png");
+        await Shot("dark", "popover-dark.png");
+        Application.Exit();
     }
 
     /// Replay the spring-open animation inside the page each time the popover is shown.

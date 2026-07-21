@@ -1,0 +1,24 @@
+{
+  "providers": [
+    {
+      "providerId": "claude",
+      "displayName": "Claude",
+      "plan": "Pro",
+      "lines": [
+        { "type": "progress", "label": "Session", "used": 32, "limit": 100, "format": { "kind": "percent" } },
+        { "type": "progress", "label": "Weekly", "used": 46, "limit": 100, "format": { "kind": "percent" } },
+        { "type": "text", "label": "Last 30 Days", "value": "$318.75 · 264.9M tokens" }
+      ]
+    },
+    {
+      "providerId": "codex",
+      "displayName": "Codex",
+      "plan": "Plus",
+      "lines": [
+        { "type": "progress", "label": "Weekly", "used": 29, "limit": 100, "format": { "kind": "percent" } },
+        { "type": "text", "label": "Last 30 Days", "value": "$96.40 · 74.2M tokens" }
+      ]
+    }
+  ],
+  "errors": []
+}
