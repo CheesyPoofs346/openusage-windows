@@ -207,10 +207,21 @@ sealed class PopoverForm : Form
         // full size, and the page never reflows mid-animation.
         _web.Dock = DockStyle.None;
         Controls.Add(_web);
-        Deactivate += (_, _) => { if (!_growing) Hide(); };
+        // Click-away close. Only ignore deactivation for a brief moment right after showing (the
+        // show/resize can fire a spurious one); ignoring it for the whole grow animation meant a
+        // deactivation landing mid-animation was swallowed and the popover then never closed at all.
+        Deactivate += (_, _) =>
+        {
+            if ((DateTime.UtcNow - _shownAt).TotalMilliseconds > 250) Hide();
+        };
 
         _grow = new System.Windows.Forms.Timer { Interval = 16 };
         _grow.Tick += (_, _) => GrowTick();
+
+        // Safety net: if the popover somehow never receives a Deactivate (a borderless tool window
+        // doesn't always), close it once focus has demonstrably moved to another application.
+        _focusWatch = new System.Windows.Forms.Timer { Interval = 250 };
+        _focusWatch.Tick += (_, _) => WatchFocus();
 
         _ = InitWebAsync();
     }
@@ -252,7 +263,11 @@ sealed class PopoverForm : Form
             if (_pendingShow) { _pendingShow = false; Inject(_data); }
         };
 
-        core.Navigate("https://openusage.local/index.html");
+        // Cache-bust on the page's own mtime: WebView2 otherwise keeps serving a cached copy of
+        // index.html after an update, so a new build's UI silently never appears.
+        var indexPath = Path.Combine(webDir, "index.html");
+        long version = File.Exists(indexPath) ? File.GetLastWriteTimeUtc(indexPath).Ticks : DateTime.UtcNow.Ticks;
+        core.Navigate($"https://openusage.local/index.html?v={version}");
     }
 
     // The page posts its measured content height so the window hugs the content like the Mac popover.
@@ -294,8 +309,11 @@ sealed class PopoverForm : Form
     {
         _finalBounds = ComputeFinalBounds();
         _web.Size = new Size(_finalBounds.Width, _finalBounds.Height);
+        _shownAt = DateTime.UtcNow;
+        _hadFocus = false;
         StartGrow();                 // window starts small at the corner and grows to _finalBounds
         Show();
+        _focusWatch.Start();
         TopMost = true;
         Activate();
         NativeActivate();
@@ -472,7 +490,31 @@ sealed class PopoverForm : Form
     }
 
     [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hWnd);
+    [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);
     private void NativeActivate() => SetForegroundWindow(Handle);
+
+    private readonly System.Windows.Forms.Timer _focusWatch;
+    private DateTime _shownAt;
+    private bool _hadFocus;
+
+    /// Hide once focus has actually moved to a different application. Waits until the popover has held
+    /// focus at least once, so it can never slam shut during the open animation.
+    private void WatchFocus()
+    {
+        if (!Visible) { _focusWatch.Stop(); return; }
+        if (_growing) return;
+
+        IntPtr foreground = GetForegroundWindow();
+        if (foreground == Handle) { _hadFocus = true; return; }
+
+        // Our own other windows (the strip, its context menu) must not close it — the strip's own
+        // click handler owns that.
+        GetWindowThreadProcessId(foreground, out uint pid);
+        if (pid == (uint)Environment.ProcessId) return;
+
+        if (_hadFocus) Hide();
+    }
 }
 
 /// Keeps usage meters on screen at ALL times. A provider's live-limits API can be briefly rate-limited,
