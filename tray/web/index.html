@@ -236,6 +236,31 @@ function fmtReset(iso){
   return `Resets in ${Math.max(1,m)}m`;
 }
 
+// A donut segment as a filled annular sector with slightly-rounded corners. Each 90° corner (where the
+// flat end cap meets the inner/outer arc) is softened with a short quadratic curve of radius ~cr, so the
+// ends read as a line with rounded corners rather than a full semicircle. Angles in radians, clockwise.
+function roundedSector(cx, cy, R, sw, a0, a1, cr){
+  const ro=R+sw/2, ri=R-sw/2;
+  cr=Math.max(0, Math.min(cr, sw/2-0.5, (a1-a0)*ri*0.49));
+  const P=(r,ang)=>[cx+r*Math.cos(ang), cy+r*Math.sin(ang)];
+  const dAo=cr/ro, dAi=cr/ri;                    // angular inset so the corner tangents line up
+  const f=(n)=>n.toFixed(3);
+  const pt=([x,y])=>`${f(x)} ${f(y)}`;
+  const A=P(ro,a0+dAo), B=P(ro,a1-dAo), Bc=P(ro,a1), C=P(ro-cr,a1);
+  const D=P(ri+cr,a1), Dc=P(ri,a1), E=P(ri,a1-dAi), F=P(ri,a0+dAi), Fc=P(ri,a0), G=P(ri+cr,a0);
+  const H=P(ro-cr,a0), Hc=P(ro,a0);
+  const laf = (a1-dAo)-(a0+dAo) > Math.PI ? 1 : 0;   // large-arc-flag: needed once a slice passes 180°
+  return `M ${pt(A)} `
+       + `A ${f(ro)} ${f(ro)} 0 ${laf} 1 ${pt(B)} ` // outer arc
+       + `Q ${pt(Bc)} ${pt(C)} `                 // outer-end corner
+       + `L ${pt(D)} `                           // end cap (radial)
+       + `Q ${pt(Dc)} ${pt(E)} `                 // inner-end corner
+       + `A ${f(ri)} ${f(ri)} 0 ${laf} 0 ${pt(F)} ` // inner arc (back)
+       + `Q ${pt(Fc)} ${pt(G)} `                 // inner-start corner
+       + `L ${pt(H)} `                           // start cap (radial)
+       + `Q ${pt(Hc)} ${pt(A)} Z`;               // outer-start corner
+}
+
 /* ---------- meter row ---------- */
 function meterRow(line){
   const used = Number(line.used)||0;
@@ -439,25 +464,26 @@ function updateSpendBody(animate){
   body.innerHTML="";
   const wrap=el("div","donut-wrap"+(animate?" anim":""));
   const donut=el("div","donut");
-  const R=58, C=2*Math.PI*R, sw=15;
+  const cx=66, cy=66, R=58, sw=15;
   let svg=`<svg viewBox="0 0 132 132" width="132" height="132">`;
-  svg+=`<circle cx="66" cy="66" r="${R}" fill="none" stroke="var(--track)" stroke-width="${sw}"/>`;
-  // Rounded segment caps (like the macOS donut): each arc ends in a half-circle instead of a hard flat
-  // edge, so the boundary between two providers reads as a soft curve. A round cap adds ~sw of length
-  // (sw/2 per end), so the dash is shortened by that plus a small gap, and nudged forward by half a cap
-  // so the visible arc stays centred on its slice. Single-provider = a full ring, no caps needed.
-  let off=0;
+  svg+=`<circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="var(--track)" stroke-width="${sw}"/>`;
+  // Each provider is a FILLED annular sector (not a stroked line), so the ends can have just a small
+  // corner radius — a line with slightly-rounded corners, not a full semicircle cap. Small angular gap
+  // between slices. A single provider is a plain full ring.
   const only = rows.length<=1;
-  // Small gap: the visible gap between two segments is (gapPx - sw), so gapPx = sw + a couple px keeps
-  // long line-like arcs with just rounded corners and a thin separation — not fat pills with big gaps.
-  const gapPx = only ? 0 : sw + 2.5;
+  const cr = only ? 0 : 3;                        // corner radius (px) — "slightly rounded"
+  const gapAng = only ? 0 : 3.2 / R;              // ~3px visible gap, expressed as an angle
+  let a = 0;                                      // start at 3 o'clock; the CSS rotate(-90deg) moves it to 12
   for(const r of rows){
-    const frac= total>0 ? r.amt/total : 0;
-    const len = only ? Math.max(0, frac*C) : Math.max(0.001, frac*C - gapPx);
-    const dashoff = only ? -off : -(off + gapPx/2);
-    svg+=`<circle cx="66" cy="66" r="${R}" fill="none" stroke="${r.color}" stroke-width="${sw}" `
-       + `stroke-dasharray="${len} ${C-len}" stroke-dashoffset="${dashoff}" stroke-linecap="${only?'butt':'round'}"/>`;
-    off+=frac*C;
+    const frac = total>0 ? r.amt/total : 0;
+    const span = frac*2*Math.PI;
+    if(only){
+      svg+=`<circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="${r.color}" stroke-width="${sw}" stroke-dasharray="${frac*2*Math.PI*R} ${2*Math.PI*R}"/>`;
+    } else {
+      const a0=a+gapAng/2, a1=a+span-gapAng/2;
+      if(a1>a0) svg+=`<path d="${roundedSector(cx,cy,R,sw,a0,a1,cr)}" fill="${r.color}"/>`;
+    }
+    a += span;
   }
   svg+=`</svg>`;
   donut.innerHTML=svg;
