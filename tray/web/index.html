@@ -448,7 +448,9 @@ function updateSpendBody(animate){
   // so the visible arc stays centred on its slice. Single-provider = a full ring, no caps needed.
   let off=0;
   const only = rows.length<=1;
-  const gapPx = only ? 0 : sw*1.35;
+  // Small gap: the visible gap between two segments is (gapPx - sw), so gapPx = sw + a couple px keeps
+  // long line-like arcs with just rounded corners and a thin separation — not fat pills with big gaps.
+  const gapPx = only ? 0 : sw + 2.5;
   for(const r of rows){
     const frac= total>0 ? r.amt/total : 0;
     const len = only ? Math.max(0, frac*C) : Math.max(0.001, frac*C - gapPx);
