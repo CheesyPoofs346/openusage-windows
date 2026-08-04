@@ -442,12 +442,19 @@ function updateSpendBody(animate){
   const R=58, C=2*Math.PI*R, sw=15;
   let svg=`<svg viewBox="0 0 132 132" width="132" height="132">`;
   svg+=`<circle cx="66" cy="66" r="${R}" fill="none" stroke="var(--track)" stroke-width="${sw}"/>`;
-  let off=0; const gap = rows.length>1 ? 0.012*C : 0;
+  // Rounded segment caps (like the macOS donut): each arc ends in a half-circle instead of a hard flat
+  // edge, so the boundary between two providers reads as a soft curve. A round cap adds ~sw of length
+  // (sw/2 per end), so the dash is shortened by that plus a small gap, and nudged forward by half a cap
+  // so the visible arc stays centred on its slice. Single-provider = a full ring, no caps needed.
+  let off=0;
+  const only = rows.length<=1;
+  const gapPx = only ? 0 : sw*1.35;
   for(const r of rows){
     const frac= total>0 ? r.amt/total : 0;
-    const len=Math.max(0, frac*C - gap);
+    const len = only ? Math.max(0, frac*C) : Math.max(0.001, frac*C - gapPx);
+    const dashoff = only ? -off : -(off + gapPx/2);
     svg+=`<circle cx="66" cy="66" r="${R}" fill="none" stroke="${r.color}" stroke-width="${sw}" `
-       + `stroke-dasharray="${len} ${C-len}" stroke-dashoffset="${-off}" stroke-linecap="butt"/>`;
+       + `stroke-dasharray="${len} ${C-len}" stroke-dashoffset="${dashoff}" stroke-linecap="${only?'butt':'round'}"/>`;
     off+=frac*C;
   }
   svg+=`</svg>`;
@@ -470,7 +477,7 @@ function updateSpendBody(animate){
 
 /* ---------- render ---------- */
 function hasSpend(providers){
-  return providers.some(p=>(p.lines||[]).some(l=>l.type==="text"&&/Last 30 Days|Today|Yesterday/.test(l.label)&&parseDollars(l.value)>0));
+  return providers.some(p=>(p.lines||[]).some(l=>l.type==="text"&&/^(Today|Last 7 Days|Last 30 Days|All Time)$/.test(l.label)&&parseDollars(l.value)>0));
 }
 function escapeHtml(s){ return String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
 
