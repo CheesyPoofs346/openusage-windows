@@ -1,22 +1,31 @@
 {
-  "originHash" : "04010e94b96c175b2a39892ad175b5eb7ba5136f38972c89d202679860e2f6de",
+  "originHash" : "089ba1dda049a53b9383abce1437e9605b743a0ca4ba9c541cd9963993a76a04",
   "pins" : [
     {
-      "identity" : "swift-asn1",
+      "identity" : "keyboardshortcuts",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/apple/swift-asn1.git",
+      "location" : "https://github.com/sindresorhus/KeyboardShortcuts",
       "state" : {
-        "revision" : "a9a5efd40eaf558a2bcd48d64b1d1646be686008",
-        "version" : "1.7.1"
+        "revision" : "772133d9dbe800fdac0473226822994c5c162c58",
+        "version" : "3.1.0"
       }
     },
     {
-      "identity" : "swift-crypto",
+      "identity" : "posthog-ios",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/apple/swift-crypto.git",
+      "location" : "https://github.com/PostHog/posthog-ios.git",
       "state" : {
-        "revision" : "95ba0316a9b733e92bb6b071255ff46263bbe7dc",
-        "version" : "3.15.1"
+        "revision" : "4a6940a043a452db3ff397874ab654a10e63a7c0",
+        "version" : "4.0.2"
+      }
+    },
+    {
+      "identity" : "sparkle",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/sparkle-project/Sparkle",
+      "state" : {
+        "revision" : "ab7d71291238df6e0492143b120c9b696a35f603",
+        "version" : "2.10.1"
       }
     }
   ],
